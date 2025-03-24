@@ -1,0 +1,738 @@
+{
+  "name": "Breach Monitor Public",
+  "nodes": [
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1LuYyonubNfF6JsFPv2QWrBDRYSk2tbuyaUU9oWBwfuU",
+          "mode": "list",
+          "cachedResultName": "Email List",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1LuYyonubNfF6JsFPv2QWrBDRYSk2tbuyaUU9oWBwfuU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1LuYyonubNfF6JsFPv2QWrBDRYSk2tbuyaUU9oWBwfuU/edit#gid=0"
+        },
+        "options": {}
+      },
+      "name": "Read Emails",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4,
+      "position": [
+        -1560,
+        15
+      ],
+      "id": "5e2786ac-8a5a-4bd5-8c08-364fc6968ae7"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "name": "Split Emails",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        -1340,
+        15
+      ],
+      "id": "cd3c5643-2354-4da1-b16e-c52eb1628799"
+    },
+    {
+      "parameters": {
+        "url": "=https://haveibeenpwned.com/api/v3/breachedaccount/{{encodeURIComponent($json.Email)}}?truncateResponse=false",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "hibp-api-key",
+              "value": "<key here>"
+            },
+            {
+              "name": "User-Agent",
+              "value": "n8nMonitorBot"
+            },
+            {
+              "name": "Accept",
+              "value": "application/json"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "name": "HIBP Request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        -680,
+        -285
+      ],
+      "id": "6de86567-ccec-46b1-893b-adfafaf4f846",
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Get the email from the context\nconst email = $('Split Emails').item.json.Email;\n\n// Get the current breach item\nconst b = $json;\n\n// Log what we're receiving\nconsole.log(\"Processing item:\", JSON.stringify(b).substring(0, 200));\n\n// Skip if there's no breach data\nif (!b || !b.Name) {\n  console.log(\"No valid breach data found\");\n  return { json: {} }; \n}\n\nconsole.log(\"Processing breach:\", b.Name, \"for\", email);\n\n// Create a breach object with all required fields\nconst breach = {\n  email: email,\n  breach_name: b.Name,\n  breach_date: `${b.BreachDate}T00:00:00.000Z`, // ← ISO datetime format\n  date_found: new Date().toISOString(),        // ← Full current timestamp\n  domain: b.Domain || \"\",\n  pwn_count: (b.PwnCount || \"0\").toString(),\n  description: b.Description || \"\",\n  unique_id: `${email.toLowerCase().replace(/@/g, '_')}_${b.Name.toLowerCase()}`\n};\n\nconsole.log(\"Processed breach:\", breach.breach_name);\n\n// Return the processed breach\nreturn {\n  json: breach\n};"
+      },
+      "name": "Process Breaches",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -240,
+        -285
+      ],
+      "id": "4ef2fb93-7b82-4454-8def-39fdc813f9ee",
+      "alwaysOutputData": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "keepOnlySet": true,
+        "values": {
+          "string": [
+            {
+              "name": "email",
+              "value": "={{ $json.email }}"
+            },
+            {
+              "name": "breach_name",
+              "value": "={{ $json.breach_name }}"
+            },
+            {
+              "name": "breach_date",
+              "value": "={{ $json.breach_date }}"
+            },
+            {
+              "name": "date_found",
+              "value": "={{ $json.date_found }}"
+            },
+            {
+              "name": "domain",
+              "value": "={{ $json.domain }}"
+            },
+            {
+              "name": "pwn_count",
+              "value": "={{ $json.pwn_count }}"
+            },
+            {
+              "name": "description",
+              "value": "={{ $json.description }}"
+            },
+            {
+              "name": "unique_id",
+              "value": "={{ $json.unique_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "70b08612-5e2d-4cb7-bcf2-d8f2fc38a808",
+      "name": "Set Fields",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        -285
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "select",
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "",
+          "mode": "name"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        200,
+        -360
+      ],
+      "id": "3b6ceedb-f4c2-44f9-bb2b-1146a2c25545",
+      "name": "Check Existing Breach",
+      "alwaysOutputData": true,
+      "executeOnce": false
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "768e9496-6daa-4335-afcf-3edca5a7f53d",
+              "leftValue": "={{ Object.keys($json).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        420,
+        -360
+      ],
+      "id": "d01d1381-b775-456f-a854-d9db5913a3f6",
+      "name": "Is New Breach?"
+    },
+    {
+      "parameters": {
+        "schema": {
+          "__rl": true,
+          "mode": "list",
+          "value": "public"
+        },
+        "table": {
+          "__rl": true,
+          "value": "=",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "breach_date": "={{ $json.breach_date }}",
+            "email": "={{ $json.email }}",
+            "breach_name": "={{ $json.breach_name }}",
+            "date_found": "={{ $json.date_found }}",
+            "domain": "={{ $json.domain }}",
+            "pwn_count": "={{ $json.pwn_count }}",
+            "description": "={{ $json.description }}",
+            "unique_id": "={{ $json.unique_id }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "number",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "breach_name",
+              "displayName": "breach_name",
+              "required": true,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "breach_date",
+              "displayName": "breach_date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date_found",
+              "displayName": "date_found",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "domain",
+              "displayName": "domain",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "pwn_count",
+              "displayName": "pwn_count",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "description",
+              "displayName": "description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "unique_id",
+              "displayName": "unique_id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "dateTime",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        860,
+        -200
+      ],
+      "id": "f9df8cd2-2a63-4b6f-8f28-aafa33c57fd6",
+      "name": "Insert New Breach",
+      "credentials": {
+        "postgres": {
+          "id": "vdhet6bBJgG8VEwg",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "authentication": "webhook",
+        "content": "=🚨 **NEW BREACH DETECTED** 🚨\n\n**Email:** {{$json.email}}\n**Breach Name:** {{$json.breach_name}}\n**Date Breached:** {{$json.breach_date}}\n**Date Discovered:** {{$json.date_found}}\n**Domain:** {{$json.domain}}\n**Records Exposed:** {{$json.pwn_count}}\n\n**Description:**\n{{$json.description}}\n\n—————————————\n🔐 Unique ID: {{$json.unique_id}}",
+        "options": {
+          "wait": "={{ true }}"
+        }
+      },
+      "type": "n8n-nodes-base.discord",
+      "typeVersion": 2,
+      "position": [
+        1520,
+        -210
+      ],
+      "id": "f3780d2b-a149-40fe-a2fe-f9fdbb942998",
+      "name": "Discord",
+      "webhookId": "eb5dc977-2076-4c79-843e-4ff411eda003"
+    },
+    {
+      "parameters": {
+        "jsCode": "const validItems = items.filter(item => item.json.email && item.json.breach_name);\n\nif (validItems.length === 0) {\n  // Stop the workflow by returning no items\n  return [];\n}\n\nreturn validItems;\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        640,
+        -285
+      ],
+      "id": "2effb98e-cbb9-4c02-a239-97cfef69e0ed",
+      "name": "Code"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "1ee9c0eb-c22a-4598-b3dc-efd79c5e1184",
+              "leftValue": "={{ Object.keys($json).length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -460,
+        -285
+      ],
+      "id": "073dcafd-f0ae-4e3c-9109-4218656f6e01",
+      "name": "Found Breaches?"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "dc53abc2-430d-4aa0-8d1c-f47831f6f45e",
+              "leftValue": "={{$node[\"Split Emails\"].context[\"noItemsLeft\"].toString()}}",
+              "rightValue": "false",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -900,
+        -285
+      ],
+      "id": "876e5ce2-d714-4f05-8a18-89843f5f50a5",
+      "name": "Email?"
+    },
+    {
+      "parameters": {
+        "amount": 10
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        -1120,
+        -285
+      ],
+      "id": "11b7adb6-3c1e-4ea1-8cee-8854cb616da7",
+      "name": "Wait",
+      "webhookId": "5fc14e0e-3617-45bc-b0a1-a36b26aba585"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1300,
+        -285
+      ],
+      "id": "7d914ca1-922d-44df-af6f-ecbe3d1f0575",
+      "name": "Wait1",
+      "webhookId": "643e9d58-5e10-472e-9788-4032916e0579"
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {
+          "reset": false
+        }
+      },
+      "name": "Split Messages",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 2,
+      "position": [
+        1080,
+        -210
+      ],
+      "id": "5e786c55-ca7e-4aab-a8f9-2583de55c623"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 3
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1780,
+        15
+      ],
+      "id": "1735e88b-2251-41e3-88d2-0cec887cf8bd",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Read Emails": {
+      "main": [
+        [
+          {
+            "node": "Split Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Emails": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HIBP Request": {
+      "main": [
+        [
+          {
+            "node": "Found Breaches?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Process Breaches": {
+      "main": [
+        [
+          {
+            "node": "Set Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Fields": {
+      "main": [
+        [
+          {
+            "node": "Check Existing Breach",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Existing Breach": {
+      "main": [
+        [
+          {
+            "node": "Is New Breach?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is New Breach?": {
+      "main": [
+        [
+          {
+            "node": "Code",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert New Breach": {
+      "main": [
+        [
+          {
+            "node": "Split Messages",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code": {
+      "main": [
+        [
+          {
+            "node": "Insert New Breach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Found Breaches?": {
+      "main": [
+        [
+          {
+            "node": "Process Breaches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Split Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email?": {
+      "main": [
+        [
+          {
+            "node": "HIBP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HIBP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait1": {
+      "main": [
+        [
+          {
+            "node": "Discord",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Messages": {
+      "main": [
+        [
+          {
+            "node": "Wait1",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Discord": {
+      "main": [
+        [
+          {
+            "node": "Split Messages",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Read Emails",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "099428fe-737d-4bce-9f5f-b7bf09497874",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f467c952a04c5dd44b3f43e18e0f5d7338dbaf299b6f24416d8d2bf8ff575ba0"
+  },
+  "id": "eM6IQUOJQqI0cro5",
+  "tags": []
+}
